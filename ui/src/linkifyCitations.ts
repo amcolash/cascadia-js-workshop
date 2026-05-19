@@ -22,15 +22,13 @@ export function prepareMemoMarkdown(memo: string, sources: SourceRef[]): string 
   return linkedBody
 }
 
-/** Replace [N] with [article title](url) in narrative sections. */
+/** Replace [N] with clickable [N](url); full titles live in ## Sources only. */
 function linkifyInlineCitations(memo: string, sources: SourceRef[]): string {
-  const byIndex = new Map(sources.map((s) => [s.index, s]))
+  const urlByIndex = new Map(sources.map((s) => [s.index, s.url]))
 
   return memo.replace(/\[(\d+)\](?!\()/g, (match, num) => {
-    const source = byIndex.get(Number(num))
-    if (!source) return match
-    const label = truncateTitle(source.title)
-    return `[${escapeLinkLabel(label)}](${source.url})`
+    const url = urlByIndex.get(Number(num))
+    return url ? `[${num}](${url})` : match
   })
 }
 
@@ -76,11 +74,6 @@ function normalizeSourceLines(block: string): string[] {
     }
   }
   return lines
-}
-
-function truncateTitle(title: string, max = 52): string {
-  const t = title.trim()
-  return t.length <= max ? t : `${t.slice(0, max - 1)}…`
 }
 
 function escapeLinkLabel(text: string): string {
