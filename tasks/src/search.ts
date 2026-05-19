@@ -1,5 +1,6 @@
 import { Exa } from 'exa-js'
 import type { SearchResult } from '../../shared/types.js'
+import type { SearchSpec } from './queries.js'
 
 function getExa(): Exa {
   const key = process.env.EXA_API_KEY
@@ -19,20 +20,23 @@ function maybeFail(query: string) {
 
 export async function searchOne(
   _topic: string,
-  query: string,
+  spec: SearchSpec,
   index: number
 ): Promise<SearchResult> {
-  maybeFail(query)
+  maybeFail(spec.query)
 
-  const response = await getExa().searchAndContents(query, {
+  const response = await getExa().searchAndContents(spec.query, {
     text: { maxCharacters: 2000 },
     numResults: 5,
-    type: 'fast',
+    type: 'auto',
+    ...(spec.startPublishedDate
+      ? { startPublishedDate: spec.startPublishedDate }
+      : {}),
   })
 
   return {
     index,
-    query,
+    query: spec.query,
     articles: response.results.map((r: (typeof response.results)[number]) => ({
       title: r.title ?? r.url,
       url: r.url,

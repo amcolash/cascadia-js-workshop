@@ -1,20 +1,33 @@
 import Anthropic from '@anthropic-ai/sdk'
-import type { SearchResult } from '../../shared/types.js'
+import type { Article, SearchResult } from '../../shared/types.js'
+import { researchDates } from './dates.js'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
+type SynthesisProgress = {
+  message?: string
+  text?: string
+}
+
 export async function synthesize(
   query: string,
-  results: SearchResult[]
+  results: SearchResult[],
+  onProgress?: (update: SynthesisProgress) => void
 ): Promise<string> {
-  const sources = results
-    .flatMap((r) => r.articles)
-    .map((a, i) => `[${i + 1}] ${a.title}\n${a.url}\n${a.text}`)
+  const { today, todayLabel } = researchDates()
+  const articles = sortByPublishedDesc(results.flatMap((r) => r.articles))
+  const sources = articles
+    .map((a, i) => formatSourceBlock(i + 1, a))
     .join('\n\n---\n\n')
+
+  onProgress?.({
+    message: `Prepared ${articles.length} articles from ${results.length} searches. Calling Claude…`,
+  })
 
   const prompt = `Write a research memo on the following topic for an individual investor.
 
 Topic: ${query}
+Research as-of date (US Eastern): ${today} (${todayLabel})
 
 Use this exact markdown structure:
 
@@ -22,8 +35,8 @@ Use this exact markdown structure:
 
 ## Snapshot
 Extract these from the sources. If a value is not in the sources, write "N/A". Do not invent numbers.
-- **Current price:** $X.XX (Y% today)
-- **Market cap:** $X
+- **Current price (${todayLabel}):** $X.XX (change vs prior close if stated) — only use a figure explicitly tied to ${todayLabel} or ${today}; otherwise N/A
+- **Market cap:** $X (same date rule as price)
 - **P/E (trailing):** X
 - **52-week range:** $X to $Y
 - **Analyst target:** $X (N analysts)
@@ -42,7 +55,7 @@ Three bullets. Each one sentence. Cite sources inline with [N].
 One paragraph. Reference the analyst target and rating from the Snapshot. Add color from any analyst commentary in the sources.
 
 ## Recent News
-Two short paragraphs covering the most material recent developments. Cite specific dates and figures from sources.
+Two short paragraphs covering developments from ${todayLabel} or the last 24 hours only. Ignore older stories unless needed for one sentence of context. Cite specific dates and figures from sources.
 
 ## Competitive Position
 One paragraph on market position and key peers.
@@ -53,7 +66,9 @@ Numbered list of sources actually cited above. Format: [N] Title (URL)
 Rules:
 - Terse, analytical tone. No marketing language. No phrases like "it is important to note."
 - Do not invent numbers or dates. If a value is not in the sources, say "N/A".
-- If sources conflict, note the conflict.
+- Sources are sorted newest-first. Prefer the newest published date for price and news.
+- Never label a price as "${todayLabel}" or "today" unless the source text or Published date supports ${today} or ${todayLabel}. Older prices (e.g. from last week) are N/A for Snapshot price fields.
+- If sources conflict, note the conflict and prefer the newest dated source.
 - Never use em dashes. Use colons instead.
 - This is NOT investment advice. Do not say buy/sell/hold yourself, only report what analysts said.
 
@@ -61,13 +76,41 @@ Sources:
 
 ${sources}`
 
-  const response = await anthropic.messages.create({
+  onProgress?.({ message: 'Claude is streaming the memo…' })
+
+  let text = ''
+  const stream = anthropic.messages.stream({
     model: 'claude-sonnet-4-5',
     max_tokens: 2500,
     messages: [{ role: 'user', content: prompt }],
   })
 
-  const block = response.content[0]
-  if (block.type !== 'text') throw new Error('Expected text response')
-  return block.text
+  for await (const event of stream) {
+    if (
+      event.type === 'content_block_delta' &&
+      event.delta.type === 'text_delta'
+    ) {
+      text += event.delta.text
+      onProgress?.({ text })
+    }
+  }
+
+  if (!text) throw new Error('Claude returned an empty memo')
+  return text
+}
+
+function sortByPublishedDesc(articles: Article[]): Article[] {
+  return [...articles].sort((a, b) => {
+    const ta = Date.parse(a.publishedDate ?? '') || 0
+    const tb = Date.parse(b.publishedDate ?? '') || 0
+    return tb - ta
+  })
+}
+
+function formatSourceBlock(index: number, article: Article): string {
+  const published = article.publishedDate?.trim() || 'unknown'
+  return `[${index}] ${article.title}
+URL: ${article.url}
+Published: ${published}
+${article.text}`
 }

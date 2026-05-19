@@ -27,6 +27,9 @@ type AppState = {
   status: 'idle' | 'running' | 'synthesizing' | 'done' | 'failed'
   searches: SearchSlot[]
   memo: string | null
+  memoDraft: string | null
+  activityLog: string[]
+  synthesizeMessage: string
   error: string | null
   failedSearchCount: number
 }
@@ -39,6 +42,9 @@ const initialState: AppState = {
   status: 'idle',
   searches: initialSearches(),
   memo: null,
+  memoDraft: null,
+  activityLog: [],
+  synthesizeMessage: '',
   error: null,
   failedSearchCount: 0,
 }
@@ -51,6 +57,8 @@ type ResearchEvent = {
   articleCount?: number
   error?: string
   memo?: string
+  message?: string
+  text?: string
 }
 
 function useResearchStream(
@@ -83,7 +91,10 @@ function computeProgress(state: AppState): {
     return { percent: 0, label: '', failed: false }
   }
   if (state.status === 'synthesizing') {
-    return { percent: 88, label: 'Writing memo…', failed: false }
+    const draftLen = state.memoDraft?.length ?? 0
+    const percent = Math.min(99, 82 + Math.floor(draftLen / 120))
+    const label = state.synthesizeMessage || 'Writing memo…'
+    return { percent, label, failed: false }
   }
   if (state.status === 'done') {
     return { percent: 100, label: 'Research complete', failed: false }
@@ -163,14 +174,25 @@ export default function App() {
         return next
       }
 
-      if (event.type === 'synthesizing') {
+      if (event.type === 'synthesizing' && event.message) {
         next.status = 'synthesizing'
+        next.synthesizeMessage = event.message
+        if (!next.activityLog.includes(event.message)) {
+          next.activityLog = [...next.activityLog, event.message]
+        }
+        return next
+      }
+
+      if (event.type === 'synthesis:chunk' && event.text) {
+        next.status = 'synthesizing'
+        next.memoDraft = event.text
         return next
       }
 
       if (event.type === 'done' && event.memo) {
         next.status = 'done'
         next.memo = event.memo
+        next.memoDraft = event.memo
         return next
       }
 
@@ -277,7 +299,12 @@ export default function App() {
               percent={progress.percent}
               label={progress.label}
               failed={progress.failed}
+              active={state.status === 'synthesizing'}
             />
+
+            {state.activityLog.length > 0 && (
+              <ActivityLog entries={state.activityLog} />
+            )}
 
             <section className="mb-10 grid grid-cols-1 gap-4 sm:grid-cols-2">
               {state.searches.map((search, i) => (
@@ -287,7 +314,15 @@ export default function App() {
 
             {(state.status === 'synthesizing' ||
               state.status === 'done' ||
-              state.status === 'failed') && <MemoPanel state={state} />}
+              state.status === 'failed') && (
+              <MemoPanel
+                status={state.status}
+                memo={state.status === 'done' ? state.memo : state.memoDraft}
+                failed={state.status === 'failed'}
+                error={state.error}
+                failedSearchCount={state.failedSearchCount}
+              />
+            )}
           </>
         )}
         </div>
@@ -324,13 +359,15 @@ function ProgressBar({
   percent,
   label,
   failed,
+  active,
 }: {
   percent: number
   label: string
   failed: boolean
+  active?: boolean
 }) {
   return (
-    <section className="mb-10" aria-live="polite">
+    <section className="mb-6" aria-live="polite">
       <div className="mb-2 flex items-center justify-between gap-4 text-sm">
         <span className={failed ? 'text-red-400' : 'text-white/80'}>{label}</span>
         <span className="shrink-0 font-mono tabular-nums text-white/50">{percent}%</span>
@@ -339,10 +376,27 @@ function ProgressBar({
         <div
           className={`h-full transition-all duration-300 ease-out ${
             failed ? 'bg-red-500' : 'bg-violet-500'
-          }`}
+          } ${active && !failed ? 'animate-pulse-violet' : ''}`}
           style={{ width: `${percent}%` }}
         />
       </div>
+    </section>
+  )
+}
+
+function ActivityLog({ entries }: { entries: string[] }) {
+  return (
+    <section className="mb-8 border border-white/10 bg-white/[0.02] p-4">
+      <h2 className="mb-3 text-xs font-medium uppercase tracking-wide text-white/50">
+        Live activity
+      </h2>
+      <ul className="space-y-2 font-mono text-xs text-white/70">
+        {entries.map((entry, i) => (
+          <li key={`${i}-${entry}`} className={i === entries.length - 1 ? 'text-violet-300' : ''}>
+            {entry}
+          </li>
+        ))}
+      </ul>
     </section>
   )
 }
@@ -395,31 +449,37 @@ function SearchCard({ index, search }: { index: number; search: SearchSlot }) {
   )
 }
 
-function MemoPanel({ state }: { state: AppState }) {
-  const failed = state.status === 'failed'
-
+function MemoPanel({
+  status,
+  memo,
+  failed,
+  error,
+  failedSearchCount,
+}: {
+  status: AppState['status']
+  memo: string | null
+  failed: boolean
+  error: string | null
+  failedSearchCount: number
+}) {
   return (
-    <section
-      className={`dds-card p-8 ${failed ? 'border-red-500/50' : ''}`}
-    >
-      {state.status === 'synthesizing' && (
-        <p className="text-center text-sm text-white/60">
-          Synthesizing memo from search results…
-        </p>
+    <section className={`dds-card p-8 ${failed ? 'border-red-500/50' : ''}`}>
+      {status === 'synthesizing' && !memo && (
+        <p className="text-center text-sm text-white/60">Waiting for first tokens from Claude…</p>
       )}
-      {state.status === 'done' && state.memo && (
+      {memo && (
         <div className="prose prose-invert max-w-none prose-headings:text-white prose-headings:font-semibold prose-h1:text-3xl prose-h1:border-b prose-h1:border-white/10 prose-h1:pb-3 prose-h2:text-xl prose-h2:mt-8 prose-h2:mb-3 prose-a:text-violet-400 prose-a:no-underline hover:prose-a:underline prose-strong:text-white prose-li:text-white/80">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{state.memo}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{memo}</ReactMarkdown>
         </div>
       )}
       {failed && (
         <div>
           <h2 className="mb-2 text-lg font-semibold text-red-400">Research failed</h2>
           <p className="mb-4 text-sm text-white/70">
-            {state.failedSearchCount} of 4 searches succeeded but the run aborted
+            {failedSearchCount} of 4 searches succeeded but the run aborted
           </p>
           <pre className="overflow-x-auto rounded border border-white/10 bg-black/40 p-4 font-mono text-xs text-red-300">
-            {state.error}
+            {error}
           </pre>
         </div>
       )}

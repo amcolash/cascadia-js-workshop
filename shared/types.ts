@@ -16,6 +16,7 @@ export type ResearchEvent =
   | { type: 'search:running'; index: number }
   | { type: 'search:done'; index: number; articleCount: number }
   | { type: 'search:failed'; index: number; error: string }
-  | { type: 'synthesizing' }
+  | { type: 'synthesizing'; message: string }
+  | { type: 'synthesis:chunk'; text: string }
   | { type: 'done'; memo: string }
   | { type: 'failed'; error: string }

@@ -8,13 +8,17 @@ export async function research(
   onEvent: (e: ResearchEvent) => void
 ): Promise<string> {
   const searches = buildQueries(query)
-  onEvent({ type: 'started', query, queries: searches })
+  onEvent({
+    type: 'started',
+    query,
+    queries: searches.map((s) => s.query),
+  })
 
   const results = await Promise.all(
-    searches.map(async (searchQuery, index) => {
+    searches.map(async (spec, index) => {
       onEvent({ type: 'search:running', index })
       try {
-        const result = await searchOne(query, searchQuery, index)
+        const result = await searchOne(query, spec, index)
         onEvent({ type: 'search:done', index, articleCount: result.articles.length })
         return result
       } catch (err) {
@@ -24,8 +28,11 @@ export async function research(
     })
   )
 
-  onEvent({ type: 'synthesizing' })
-  const memo = await synthesize(query, results)
+  onEvent({ type: 'synthesizing', message: 'All searches complete. Starting synthesis…' })
+  const memo = await synthesize(query, results, (update) => {
+    if (update.message) onEvent({ type: 'synthesizing', message: update.message })
+    if (update.text) onEvent({ type: 'synthesis:chunk', text: update.text })
+  })
   onEvent({ type: 'done', memo })
   return memo
 }
