@@ -176,24 +176,14 @@ export default function App() {
           <span className="text-sm font-semibold tracking-wide text-white">
             Ticker Research
           </span>
-          <div className="flex items-center gap-4">
-            <a
-              href={GITHUB_REPO}
-              target="_blank"
-              rel="noreferrer"
-              className="text-sm text-white/70 hover:text-white"
-            >
-              GitHub
-            </a>
-            <a
-              href={renderSignupUrlWithUtms('navbar_button')}
-              className="dds-btn-ghost text-sm"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Sign up on Render
-            </a>
-          </div>
+          <a
+            href={renderSignupUrlWithUtms('navbar_button')}
+            className="dds-btn-ghost text-sm"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Sign up on Render
+          </a>
         </div>
       </header>
 
@@ -255,14 +245,24 @@ export default function App() {
 
       <footer className="mx-auto flex max-w-[960px] flex-wrap items-center justify-between gap-4 border-t border-white/10 px-6 py-8 text-sm text-white/60">
         <span>Built for CascadiaJS 2026 workshop on Render Workflows</span>
-        <a
-          href={renderSignupUrlWithUtms('footer_link')}
-          className="text-violet-400 hover:underline"
-          target="_blank"
-          rel="noreferrer"
-        >
-          Sign up on Render
-        </a>
+        <div className="flex flex-wrap items-center gap-4">
+          <a
+            href={GITHUB_REPO}
+            target="_blank"
+            rel="noreferrer"
+            className="text-white/70 hover:text-white hover:underline"
+          >
+            GitHub
+          </a>
+          <a
+            href={renderSignupUrlWithUtms('footer_link')}
+            className="text-violet-400 hover:underline"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Sign up on Render
+          </a>
+        </div>
       </footer>
     </div>
   )
